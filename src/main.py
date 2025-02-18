@@ -59,19 +59,22 @@ def whats_new(session):
         'li.toctree-l1 a[href$=".html"]',
     )
     results = [('Ссылка на статью', 'Заголовок', 'Редактор, автор')]
+    log_list = []
     for a_tag in tqdm(a_tags):
         version_link = urljoin(whats_new_url, a_tag['href'])
         try:
             soup = get_soup(session, version_link)
         except ConnectionError as error:
-            logging.error(
-                CONNECTION_MESSAGE_ERROR.format(url=version_link, error=error)
+            log_list.append(
+                CONNECTION_MESSAGE_ERROR.format(
+                    url=version_link, error=error,
+                ),
             )
             continue
         h1 = find_tag(soup, 'h1')
         dl = find_tag(soup, 'dl')
         results.append((version_link, h1.text, dl.text.replace('\n', ' ')))
-
+    list(map(logging.error, log_list))
     return results
 
 
@@ -112,7 +115,7 @@ def download(session):
     archive_url = urljoin(
         downloads_url,
         get_soup(session, downloads_url).select_one(
-            'table.docutils a[href$="pdf-a4.zip"]'
+            'table.docutils a[href$="pdf-a4.zip"]',
         )['href'],
     )
     download_dir = BASE_DIR / DOWNLOAD_DIR
@@ -130,6 +133,7 @@ def pep(session):
     table = find_tag(get_soup(session, PEP_LIST_URL), 'tbody')
     counts_statuses = defaultdict(int)
     not_equals_statuses = []
+    log_list = []
     tr_tags = table.find_all('tr')
     for tr_tag in tqdm(tr_tags):
         tr_status = get_main_status(tr_tag)
@@ -137,10 +141,10 @@ def pep(session):
         try:
             soup = get_soup(session, tr_link)
         except ConnectionError as error:
-            raise CONNECTION_MESSAGE_ERROR.format(
-                url=tr_link,
-                error=error,
+            log_list.append(
+                CONNECTION_MESSAGE_ERROR.format(url=tr_link, error=error),
             )
+            continue
         pep_status = get_single_status(soup)
         if pep_status not in tr_status:
             not_equals_statuses.append(
@@ -148,10 +152,11 @@ def pep(session):
                     tr_link=tr_link,
                     pep_status=pep_status,
                     tr_status=tr_status,
-                )
+                ),
             )
         counts_statuses[pep_status] += 1
 
+    list(map(logging.error, log_list))
     list(map(logging.info, not_equals_statuses))
     return [
         ('Статус', 'Количество'),

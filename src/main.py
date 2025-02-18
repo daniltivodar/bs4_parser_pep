@@ -64,9 +64,10 @@ def whats_new(session):
         try:
             soup = get_soup(session, version_link)
         except ConnectionError as error:
-            raise CONNECTION_MESSAGE_ERROR.format(
-                url=version_link, error=error,
+            logging.error(
+                CONNECTION_MESSAGE_ERROR.format(url=version_link, error=error)
             )
+            continue
         h1 = find_tag(soup, 'h1')
         dl = find_tag(soup, 'dl')
         results.append((version_link, h1.text, dl.text.replace('\n', ' ')))
@@ -137,7 +138,8 @@ def pep(session):
             soup = get_soup(session, tr_link)
         except ConnectionError as error:
             raise CONNECTION_MESSAGE_ERROR.format(
-                url=tr_link, error=error,
+                url=tr_link,
+                error=error,
             )
         pep_status = get_single_status(soup)
         if pep_status not in tr_status:

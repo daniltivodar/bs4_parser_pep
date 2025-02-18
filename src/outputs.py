@@ -16,15 +16,6 @@ COMPLETE_MESSAGE = 'Файл с результатами был сохранён
 FILE_PATH_NAME = '{mode}_{date}.csv'
 
 
-def control_output(results, cli_args):
-    OUTPUT_CHOICES = {
-        OUTPUT_PRETTY: pretty_output,
-        OUTPUT_FILE: file_output,
-        None: default_output,
-    }
-    OUTPUT_CHOICES[cli_args.output](results, cli_args)
-
-
 def default_output(results, *args):
     for row in results:
         print(*row)
@@ -50,3 +41,14 @@ def file_output(results, cli_args):
     with open(file_path, 'w', encoding='utf-8') as file:
         csv.writer(file, csv.unix_dialect).writerows(results)
     logging.info(COMPLETE_MESSAGE.format(file_path=file_path))
+
+
+OUTPUT_CHOICES = {
+    OUTPUT_PRETTY: pretty_output,
+    OUTPUT_FILE: file_output,
+    None: default_output,
+}
+
+
+def control_output(results, cli_args):
+    OUTPUT_CHOICES[cli_args.output](results, cli_args)

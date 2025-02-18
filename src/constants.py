@@ -2,7 +2,6 @@ from pathlib import Path
 
 
 BASE_DIR = Path('__file__').parent
-OUTPUT_DEFAULT = None
 OUTPUT_FILE = 'file'
 OUTPUT_PRETTY = 'pretty'
 DATETIME_FORMAT = '%Y-%m-%d_%H-%M-%S'

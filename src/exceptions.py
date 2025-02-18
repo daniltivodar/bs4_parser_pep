@@ -4,3 +4,7 @@ class ParserException(Exception):
 
 class ParserFindTagException(Exception):
     """Вызывается, когда парсер не может найти тег."""
+
+
+class ParserFindUrlException(Exception):
+    """Вызывается, когда парсер не может найти ссылку."""

@@ -15,18 +15,19 @@ from constants import (
     PEP_LIST_URL,
     PEP_URL,
 )
-from exceptions import ParserException, ParserFindTagException
+from exceptions import ParserException, ParserFindUrlException
 from outputs import control_output
 from utils import find_tag, get_soup
 
+CONNECTION_MESSAGE_ERROR = 'Не удается подключиться к {url}, ошибка: {error}'
 DOWNLOAD_MESSAGE_INFO = 'Архив был загружен и сохранён: {archive_path}'
 END_LOG_INFO = 'Парсер завершил работу.'
 PARSER_LOG_ERROR = 'Работа парсера вызвала ошибку: {error}'
 PEP_LOG_INFO = (
-    '{log_info[0]}\n'
-    'Статус в карточке: {log_info[1]}\n'
+    '{tr_link}\n'
+    'Статус в карточке: {pep_status}\n'
     'Ожидаемые статусы:'
-    '{log_info[2]}'
+    '{tr_status}'
 )
 MAIN_LOG_INFO = 'Аргументы командной строки {args}'
 MESSAGE_ERROR = 'Ничего не нашлось'
@@ -35,10 +36,9 @@ START_LOG_INFO = 'Парсер запущен!'
 
 def get_main_status(tr_tag):
     try:
-        tr_status = EXPECTED_STATUS[find_tag(tr_tag, 'abbr').text[1]]
+        return EXPECTED_STATUS[find_tag(tr_tag, 'abbr').text[1]]
     except (TypeError, IndexError):
-        tr_status = 'Some unknown status'
-    return tr_status
+        return 'Some unknown status'
 
 
 def get_single_status(soup):
@@ -54,16 +54,19 @@ def whats_new(session):
     Ссылки, заголовки и авторов данных нововведений.
     """
     whats_new_url = urljoin(MAIN_DOC_URL, 'whatsnew/')
-    soup = get_soup(session, whats_new_url)
-    sections_by_python = soup.select(
-        '#what-s-new-in-python div.toctree-wrapper li.toctree-l1',
+    a_tags = get_soup(session, whats_new_url).select(
+        '#what-s-new-in-python div.toctree-wrapper '
+        'li.toctree-l1 a[href$=".html"]',
     )
     results = [('Ссылка на статью', 'Заголовок', 'Редактор, автор')]
-    for section in tqdm(sections_by_python):
-
-        version_link = urljoin(whats_new_url, find_tag(section, 'a')['href'])
-        soup = get_soup(session, version_link)
-
+    for a_tag in tqdm(a_tags):
+        version_link = urljoin(whats_new_url, a_tag['href'])
+        try:
+            soup = get_soup(session, version_link)
+        except ConnectionError as error:
+            raise CONNECTION_MESSAGE_ERROR.format(
+                url=version_link, error=error,
+            )
         h1 = find_tag(soup, 'h1')
         dl = find_tag(soup, 'dl')
         results.append((version_link, h1.text, dl.text.replace('\n', ' ')))
@@ -76,16 +79,18 @@ def latest_versions(session):
     Метод возвращает ссылки на документации
     каждой отдельной версии Python, также их статус.
     """
-    soup = get_soup(session, MAIN_DOC_URL)
-
-    sidebar = find_tag(soup, 'div', attrs={'class': 'sphinxsidebarwrapper'})
+    sidebar = find_tag(
+        get_soup(session, MAIN_DOC_URL),
+        'div',
+        attrs={'class': 'sphinxsidebarwrapper'},
+    )
 
     for ul in sidebar.find_all('ul'):
         if 'All versions' in ul.text:
             a_tags = ul.find_all('a')
             break
     else:
-        raise ParserFindTagException(MESSAGE_ERROR)
+        raise ParserFindUrlException(MESSAGE_ERROR)
 
     results = [('Ссылка на документацию', 'Версия', 'Статус')]
     pattern = r'Python (?P<version>\d\.\d+) \((?P<status>.*)\)'
@@ -103,10 +108,11 @@ def latest_versions(session):
 def download(session):
     """Метод скачивает и сохраняет новейшую документацию Python."""
     downloads_url = urljoin(MAIN_DOC_URL, 'download.html')
-    soup = get_soup(session, downloads_url)
     archive_url = urljoin(
         downloads_url,
-        soup.select_one('table.docutils a[href$="pdf-a4.zip"]')['href'],
+        get_soup(session, downloads_url).select_one(
+            'table.docutils a[href$="pdf-a4.zip"]'
+        )['href'],
     )
     download_dir = BASE_DIR / DOWNLOAD_DIR
     download_dir.mkdir(exist_ok=True)
@@ -120,23 +126,31 @@ def download(session):
 
 def pep(session):
     """Метод возвращает все документы PEP, их типы и статусы."""
-    soup = get_soup(session, PEP_LIST_URL)
-
-    table = find_tag(soup, 'tbody')
+    table = find_tag(get_soup(session, PEP_LIST_URL), 'tbody')
     counts_statuses = defaultdict(int)
     not_equals_statuses = []
     tr_tags = table.find_all('tr')
     for tr_tag in tqdm(tr_tags):
         tr_status = get_main_status(tr_tag)
         tr_link = urljoin(PEP_URL, find_tag(tr_tag, 'a')['href'])
-        soup = get_soup(session, tr_link)
+        try:
+            soup = get_soup(session, tr_link)
+        except ConnectionError as error:
+            raise CONNECTION_MESSAGE_ERROR.format(
+                url=tr_link, error=error,
+            )
         pep_status = get_single_status(soup)
         if pep_status not in tr_status:
-            not_equals_statuses.append([tr_link, pep_status, tr_status])
+            not_equals_statuses.append(
+                PEP_LOG_INFO.format(
+                    tr_link=tr_link,
+                    pep_status=pep_status,
+                    tr_status=tr_status,
+                )
+            )
         counts_statuses[pep_status] += 1
 
-    for log_info in not_equals_statuses:
-        logging.info(PEP_LOG_INFO.format(log_info=log_info))
+    list(map(logging.info, not_equals_statuses))
     return [
         ('Статус', 'Количество'),
         *counts_statuses.items(),
